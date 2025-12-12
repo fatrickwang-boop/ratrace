@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Rat Race: Easier Mode</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #1a1a1a;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: white;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        #game-wrapper {
+            position: relative;
+            width: 100%;
+            max-width: 450px;
+            height: 100%;
+            max-height: 800px;
+            background-color: #333;
+            border: 2px solid #555;
+            box-shadow: 0 0 30px rgba(0,0,0,0.7);
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            /* Scrolling floor effect */
+            background: repeating-linear-gradient(
+                0deg,
+                #2a2a2a,
+                #2a2a2a 40px,
+                #303030 40px,
+                #303030 80px
+            );
+            background-size: 100% 80px;
+            animation: scrollFloor 0.2s linear infinite;
+        }
+
+        @keyframes scrollFloor {
+            from { background-position: 0 0; }
+            to { background-position: 0 80px; }
+        }
+
+        /* UI Overlays */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 15px;
+            box-sizing: border-box;
+            z-index: 5;
+        }
+
+        .hud-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 2px 2px 0 #000;
+            background: rgba(0,0,0,0.6);
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid #555;
+        }
+
+        #score-display { color: #4caf50; }
+        #age-display { color: #add8e6; } 
+        .danger-time { color: #ff4444 !important; }
+
+        /* Menu Screens */
+        .menu-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(18, 18, 18, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 10;
+            pointer-events: auto;
+            padding: 20px;
+            box-sizing: border-box;
+            transition: opacity 0.3s;
+        }
+
+        h1 { font-size: 32px; margin-bottom: 5px; color: #ffeb3b; text-transform: uppercase; letter-spacing: 2px;}
+        p { font-size: 16px; color: #bbb; margin-bottom: 30px; line-height: 1.6; max-width: 320px;}
+        
+        .start-btn {
+            padding: 15px 40px;
+            font-size: 20px;
+            font-family: inherit;
+            font-weight: bold;
+            background: #4caf50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-bottom: 5px solid #2e7d32;
+            border-radius: 4px;
+            text-transform: uppercase;
+            box-shadow: 0 4px 0 rgba(0,0,0,0.2);
+        }
+        .start-btn:active { border-bottom: none; transform: translateY(5px); box-shadow: none; }
+
+        .hidden { display: none !important; opacity: 0; pointer-events: none; }
+
+    </style>
+</head>
+<body>
+
+    <div id="game-wrapper">
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- HUD -->
+        <div id="ui-layer">
+            <div class="hud-row">
+                <span id="score-display">NET WORTH: $0</span>
+            </div>
+            <div class="hud-row" style="margin-top: 5px;">
+                <span id="age-display">AGE: 20</span>
+                <span id="timer-display">TIME: 30s</span>
+            </div>
+        </div>
+        
+        <!-- Start Screen -->
+        <div id="start-screen" class="menu-screen">
+            <div style="font-size: 60px; margin-bottom: 10px;">👔<br>🐀</div>
+            <h1>The Rat Race</h1>
+            <p><strong>Goal:</strong> Accumulate wealth before time runs out.</p>
+            <p>
+                <span style="color:#4caf50">GOOD:</span> Cash ($), Green Charts<br>
+                <span style="color:#ff4444">BAD:</span> Diamonds (Luxury Trap), Red Charts
+            </p>
+            <button class="start-btn" onclick="startGame()">Join Workforce</button>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="game-over-screen" class="menu-screen hidden">
+            <div style="font-size: 60px;">⚰️</div>
+            <h1 style="color: #ff4444;">THE END</h1>
+            <h2 id="final-score-text">Final Score: $0</h2>
+            <p id="death-message">You can't take it with you.</p>
+            <button class="start-btn" onclick="resetGame()">Reincarnate</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const wrapper = document.getElementById('game-wrapper');
+
+        // UI Elements
+        const scoreEl = document.getElementById('score-display');
+        const timerEl = document.getElementById('timer-display');
+        const ageEl = document.getElementById('age-display');
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const finalScoreText = document.getElementById('final-score-text');
+
+        // Game Constants
+        const GRAVITY_SPEED = 400; 
+        const PLAYER_SPEED = 400; 
+        const SPAWN_RATE = 0.4; 
+        const TOTAL_TIME = 30;
+        const START_AGE = 20;
+        const END_AGE = 65;
+
+        // State
+        let gameState = 'MENU'; 
+        let score = 0;
+        let timeLeft = TOTAL_TIME;
+        let currentAge = START_AGE;
+        let lastTime = 0;
+        let spawnTimer = 0;
+        let slowDownTimer = 0; 
+        
+        // Entities
+        let player = { x: 0, y: 0, width: 50, height: 60 };
+        let items = []; 
+        let floatingTexts = []; 
+        let coffinWall = []; 
+
+        // Resize Handling
+        function resize() {
+            canvas.width = wrapper.clientWidth;
+            canvas.height = wrapper.clientHeight;
+            if (gameState === 'MENU') {
+                player.x = canvas.width / 2 - player.width / 2;
+                player.y = canvas.height - 120;
+            } else {
+                player.y = canvas.height - 120;
+            }
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Input
+        const keys = { left: false, right: false };
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+        });
+        // Touch
+        canvas.addEventListener('touchstart', (e) => handleTouch(e), {passive: false});
+        canvas.addEventListener('touchmove', (e) => handleTouch(e), {passive: false});
+        canvas.addEventListener('touchend', (e) => { e.preventDefault(); keys.left = false; keys.right = false; });
+        function handleTouch(e) {
+            e.preventDefault();
+            const x = e.touches[0].clientX - canvas.getBoundingClientRect().left;
+            if (x < canvas.width / 2) { keys.left = true; keys.right = false; }
+            else { keys.left = false; keys.right = true; }
+        }
+
+        // --- Core Game Functions ---
+
+        function startGame() {
+            score = 0;
+            timeLeft = TOTAL_TIME;
+            currentAge = START_AGE;
+            items = [];
+            floatingTexts = [];
+            coffinWall = [];
+            gameState = 'PLAYING';
+            
+            startScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            timerEl.classList.remove('danger-time');
+            updateHUD();
+
+            // Reset Animation speed
+            canvas.style.animationDuration = '0.2s';
+            canvas.style.animationPlayState = 'running';
+            
+            lastTime = performance.now();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function resetGame() {
+            gameOverScreen.classList.add('hidden');
+            startScreen.classList.remove('hidden');
+        }
+
+        function spawnItem() {
+            const isBad = Math.random() > 0.6; 
+            const size = 45;
+            let subtype, content;
+            
+            if (!isBad) {
+                // GOOD ITEMS
+                const rand = Math.random();
+                if (rand < 0.3) {
+                    subtype = 'CHART_UP';
+                    content = 'CHART';
+                } else {
+                    subtype = 'EMOJI';
+                    content = ['💵', '💵', '💰'][Math.floor(Math.random() * 3)];
+                }
+            } else {
+                // BAD ITEMS
+                const rand = Math.random();
+                if (rand < 0.3) {
+                    subtype = 'CHART_DOWN';
+                    content = 'CHART';
+                } else if (rand < 0.6) {
+                    subtype = 'EMOJI';
+                    content = '💎'; // Luxury Trap
+                } else {
+                    subtype = 'EMOJI';
+                    content = ['🔥', '💩'][Math.floor(Math.random() * 2)];
+                }
+            }
+
+            const item = {
+                x: Math.random() * (canvas.width - size),
+                y: -60,
+                width: size,
+                height: size,
+                type: isBad ? 'BAD' : 'GOOD',
+                subtype: subtype,
+                content: content,
+                vy: GRAVITY_SPEED + (Math.random() * 100) 
+            };
+            items.push(item);
+        }
+
+        function updateHUD() {
+            scoreEl.innerText = `NET WORTH: $${score}`;
+            timerEl.innerText = `${Math.ceil(timeLeft)}s`;
+            ageEl.innerText = `AGE: ${Math.floor(currentAge)}`;
+        }
+
+        function gameLoop(timestamp) {
+            if (gameState === 'GAMEOVER_DONE') return;
+
+            const dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (gameState === 'PLAYING') {
+                updatePlaying(dt);
+            } else if (gameState === 'SLOW_DOWN') {
+                updateSlowDown(dt);
+            } else if (gameState === 'ENDING_SEQUENCE') {
+                updateEndingSequence(dt);
+            }
+
+            drawEntities();
+            drawUIEffects();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function updatePlaying(dt) {
+            timeLeft -= dt;
+            
+            // Calculate Age
+            const timePassed = TOTAL_TIME - timeLeft;
+            const ageProgress = timePassed / TOTAL_TIME;
+            currentAge = START_AGE + (ageProgress * (END_AGE - START_AGE));
+
+            if (timeLeft <= 10) timerEl.classList.add('danger-time');
+            if (timeLeft <= 0) {
+                timeLeft = 0;
+                currentAge = END_AGE;
+                startSlowDownPhase();
+                return;
+            }
+
+            // Player Movement
+            movePlayer(dt);
+
+            // Spawning
+            spawnTimer += dt;
+            if (spawnTimer > SPAWN_RATE) {
+                spawnItem();
+                spawnTimer = 0;
+            }
+
+            // Update items
+            updateItems(dt);
+            updateHUD();
+        }
+
+        function startSlowDownPhase() {
+            gameState = 'SLOW_DOWN';
+            slowDownTimer = 0;
+            
+            // Slow down the floor scrolling visually
+            canvas.style.animationDuration = '1.5s'; 
+        }
+
+        function updateSlowDown(dt) {
+            slowDownTimer += dt;
+            
+            movePlayer(dt);
+            updateItems(dt);
+
+            // Wait for ~half screen gap (approx 1.5s) before coffins
+            if (slowDownTimer > 1.5) {
+                spawnCoffinWall();
+            }
+        }
+
+        function spawnCoffinWall() {
+            gameState = 'ENDING_SEQUENCE';
+            
+            // Floor crawls super slow
+            canvas.style.animationDuration = '3s';
+            
+            // Create a wall of coffins covering the whole width
+            const coffinWidth = 60;
+            const gap = 10;
+            const count = Math.ceil(canvas.width / (coffinWidth + gap)) + 1;
+            
+            for(let i=0; i<count; i++) {
+                coffinWall.push({
+                    x: i * (coffinWidth + gap) - 20, 
+                    y: -150,
+                    width: coffinWidth,
+                    height: 100,
+                    emoji: '⚰️',
+                    vy: 200 // Slow menacing speed
+                });
+            }
+        }
+
+        function updateEndingSequence(dt) {
+            movePlayer(dt);
+            updateItems(dt); // Keep moving old items if any remain
+
+            // Move Coffins
+            let crash = false;
+            coffinWall.forEach(coffin => {
+                coffin.y += coffin.vy * dt;
+                
+                // Float player up slightly towards doom
+                if (player.y > coffin.y + coffin.height + 50) {
+                   // player.y -= 10 * dt; 
+                }
+
+                if (checkCollision(player, coffin) || coffin.y + coffin.height > player.y + 40) {
+                    crash = true;
+                }
+            });
+
+            if (crash) {
+                performDeath();
+            }
+        }
+
+        function movePlayer(dt) {
+            if (keys.left) player.x -= PLAYER_SPEED * dt;
+            if (keys.right) player.x += PLAYER_SPEED * dt;
+            if (player.x < 0) player.x = 0;
+            if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
+        }
+
+        function updateItems(dt) {
+            for (let i = items.length - 1; i >= 0; i--) {
+                let item = items[i];
+                item.y += item.vy * dt;
+                if (checkCollision(player, item)) {
+                    handleItemCollision(item);
+                    items.splice(i, 1);
+                } else if (item.y > canvas.height) {
+                    items.splice(i, 1);
+                }
+            }
+        }
+
+        function handleItemCollision(item) {
+            // Penalty reduced from -250 to -50
+            const val = item.type === 'GOOD' ? 100 : -50;
+            const color = item.type === 'GOOD' ? '#4caf50' : '#ff4444';
+            let txt = val > 0 ? `+$${val}` : `-$${Math.abs(val)}`;
+            
+            if (item.content === '💎') txt = "LUXURY TRAP!";
+
+            score += val;
+            addFloatingText(txt, player.x, player.y - 20, color);
+        }
+
+        function checkCollision(a, b) {
+            return (a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y);
+        }
+
+        function addFloatingText(text, x, y, color) {
+            floatingTexts.push({ text, x, y, color, life: 1.0, vy: 60 });
+        }
+
+        function performDeath() {
+            gameState = 'GAMEOVER_DONE';
+            canvas.style.animationPlayState = 'paused';
+            
+            const finalSavedScore = score;
+            score = 0;
+            updateHUD();
+
+            addFloatingText("CRASH!", player.x - 20, player.y, "#fff");
+            addFloatingText("-$" + finalSavedScore, player.x, player.y - 30, "#ff4444");
+
+            setTimeout(() => {
+                finalScoreText.innerText = `Final Net Worth: $0`;
+                document.getElementById('death-message').innerText = `You earned $${finalSavedScore} but can't take it with you.`;
+                gameOverScreen.classList.remove('hidden');
+            }, 1500);
+        }
+
+        // --- DRAWING LOGIC ---
+
+        function drawEntities() {
+            drawPlayer();
+
+            // Items
+            items.forEach(item => {
+                if (item.subtype === 'EMOJI') {
+                    ctx.font = "40px Arial";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(item.content, item.x + item.width/2, item.y + item.height/2);
+                } else if (item.subtype.startsWith('CHART')) {
+                    drawChartIcon(item.x, item.y, item.width, item.height, item.subtype === 'CHART_UP');
+                }
+            });
+
+            // Coffin Wall
+            coffinWall.forEach(c => {
+                ctx.font = "80px Arial";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(c.emoji, c.x + c.width/2, c.y + c.height/2);
+            });
+        }
+
+        function drawChartIcon(x, y, w, h, isUp) {
+            ctx.save();
+            ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+            ctx.strokeStyle = "#555";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.rect(x, y, w, h);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.strokeStyle = isUp ? "#00aa00" : "#cc0000"; 
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
+            ctx.beginPath();
+            const pad = 8;
+            const dw = w - (pad*2);
+            const dh = h - (pad*2);
+            const sx = x + pad;
+            const sy = y + pad;
+
+            if (isUp) {
+                ctx.moveTo(sx, sy + dh); 
+                ctx.lineTo(sx + dw*0.3, sy + dh*0.6); 
+                ctx.lineTo(sx + dw*0.6, sy + dh*0.8); 
+                ctx.lineTo(sx + dw, sy); 
+            } else {
+                ctx.moveTo(sx, sy); 
+                ctx.lineTo(sx + dw*0.3, sy + dh*0.4); 
+                ctx.lineTo(sx + dw*0.6, sy + dh*0.2); 
+                ctx.lineTo(sx + dw, sy + dh); 
+            }
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawPlayer() {
+            ctx.save();
+            const cx = player.x + player.width/2;
+            const cy = player.y + player.height/2;
+            ctx.translate(cx, cy);
+            ctx.rotate(Math.PI / 2); 
+
+            let mainEmoji = '🐭'; // 20-30: Young Mouse
+            let filter = 'none';
+            let accessory = '';
+
+            // 30-40: Grown Rat
+            if (currentAge >= 30) {
+                mainEmoji = '🐀';
+            }
+
+            // 40-50: Rat with Glasses
+            if (currentAge >= 40) {
+                mainEmoji = '🐀';
+                accessory = '👓';
+            }
+
+            // 50-65: White Hairs (Grayscale)
+            if (currentAge >= 50) {
+                accessory = '👓';
+                filter = 'grayscale(100%) brightness(1.5)';
+            }
+
+            if (filter !== 'none') ctx.filter = filter;
+
+            ctx.font = "50px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(mainEmoji, 0, 0);
+
+            ctx.filter = 'none';
+            ctx.font = "30px Arial";
+            ctx.fillText('👔', 20, 0); 
+
+            if (accessory) {
+                ctx.font = "20px Arial";
+                ctx.fillText(accessory, -10, -5); 
+            }
+
+            ctx.restore();
+        }
+
+        function drawUIEffects() {
+            for (let i = floatingTexts.length - 1; i >= 0; i--) {
+                let ft = floatingTexts[i];
+                ft.life -= 0.016;
+                ft.y -= ft.vy * 0.016;
+                if (ft.life <= 0) { floatingTexts.splice(i, 1); continue; }
+                
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, ft.life);
+                ctx.fillStyle = ft.color;
+                ctx.font = "bold 24px Courier New";
+                ctx.shadowColor = "black";
+                ctx.shadowBlur = 2;
+                ctx.fillText(ft.text, ft.x + 10, ft.y);
+                ctx.restore();
+            }
+        }
+    </script>
+</body>
+</html>
